@@ -1,18 +1,16 @@
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:doodoo/services/supabase_service.dart';
 
-final supabase = Supabase.instance.client;
-
-class PoopOfTheDay extends StatefulWidget {
-  const PoopOfTheDay({super.key});
+class PoopOfTheDayPage extends StatefulWidget {
+  const PoopOfTheDayPage({super.key});
 
   @override
-  _PoopOfTheDayState createState() => _PoopOfTheDayState();
+  _PoopOfTheDayPageState createState() => _PoopOfTheDayPageState();
 }
 
-class _PoopOfTheDayState extends State<PoopOfTheDay> {
-  Uint8List? _imageBytes;
+class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
+  final SupabaseService _supabaseService = SupabaseService();
+  String? _imageUrl;
 
   @override
   void initState() {
@@ -21,27 +19,23 @@ class _PoopOfTheDayState extends State<PoopOfTheDay> {
   }
 
   Future<void> _loadHighestRatedImage() async {
-  try {
-    final bytes = await supabase
-        .storage
-        .from('ipoop-files')
-        .download('1748870135619_download.jpg'); // find the highest rated imagename
-
-    setState(() {
-      _imageBytes = bytes;
-    });
-  } catch (e) {
-    debugPrint('Error loading image: $e');
+    try {
+      final imageUrl = await _supabaseService.fetchHighestRatedImage();
+      setState(() {
+        _imageUrl = imageUrl;
+      });
+    } catch (e) {
+      debugPrint('Error loading highest-rated image: $e');
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('Poop of the Day')),
       body: Center(
-        child: _imageBytes != null
-            ? Image.memory(_imageBytes!)
+        child: _imageUrl != null
+            ? Image.network(_imageUrl!)
             : const CircularProgressIndicator(),
       ),
     );
