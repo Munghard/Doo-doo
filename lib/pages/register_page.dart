@@ -26,7 +26,8 @@ class _RegisterPageState extends State<RegisterPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: Text(widget.title)),
-      body: Padding(
+      body:Center(
+       child:Padding(
         padding: const EdgeInsets.all(16),
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400.0, maxHeight: 600.0),
@@ -81,6 +82,8 @@ class _RegisterPageState extends State<RegisterPage> {
           ],
         ),
       ),
+      ),
+      
       ),
     );
   }

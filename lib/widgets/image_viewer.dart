@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_rating_bar/flutter_rating_bar.dart';
 
 class ImageViewer extends StatelessWidget {
   final String? imageUrl;
@@ -7,8 +6,8 @@ class ImageViewer extends StatelessWidget {
   final String? postedBy;
   final VoidCallback? onNext;
   final VoidCallback? onPrev;
-  final double rating;
-  final ValueChanged<double>? onRatingUpdate;
+  final bool showNavigation; // Flag to control navigation visibility
+  final int? ratingCount; // New property to display the number of ratings
 
   const ImageViewer({
     super.key,
@@ -17,73 +16,64 @@ class ImageViewer extends StatelessWidget {
     required this.postedBy,
     this.onNext,
     this.onPrev,
-    required this.rating,
-    this.onRatingUpdate,
+    this.showNavigation = true, // Default to true
+    this.ratingCount, // Optional property
   });
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          imageName ?? 'No image selected',
-          style: Theme.of(context).textTheme.titleMedium,
-          textAlign: TextAlign.center,
-        ),
-        Text(
-          'By user: ${postedBy ?? 'Anon'}',
-          style: Theme.of(context).textTheme.titleSmall,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
-        Row(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            ElevatedButton(
-              onPressed: onPrev,
-              child: const Icon(Icons.arrow_back),
+            Text(
+              imageName ?? 'No image selected',
+              style: Theme.of(context).textTheme.titleMedium,
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(width: 10),
-            Container(
-              constraints: BoxConstraints(maxWidth: 600, maxHeight: 600),
-              decoration: BoxDecoration(border: Border.all(color: Colors.brown, width: 4)),
-              child: imageUrl != null && imageUrl!.isNotEmpty
-                  ? Image.network(imageUrl!, fit: BoxFit.cover)
-                  : const Center(child: Text('No images available')),
+            Text(
+              'By user: ${postedBy ?? 'Anon'}',
+              style: Theme.of(context).textTheme.titleSmall,
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(width: 10),
-            ElevatedButton(
-              onPressed: onNext,
-              child: const Icon(Icons.arrow_forward),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (showNavigation)
+                  ElevatedButton(
+                    onPressed: onPrev,
+                    child: const Icon(Icons.arrow_back),
+                  ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  height: constraints.maxHeight * 0.8, // Use 80% of the allocated height
+                  child: Container(
+                    decoration: BoxDecoration(border: Border.all(color: Colors.brown, width: 4)),
+                    child: imageUrl != null && imageUrl!.isNotEmpty
+                        ? Image.network(imageUrl!, fit: BoxFit.contain)
+                        : const Center(child: Text('No images available')),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                if (showNavigation)
+                  ElevatedButton(
+                    onPressed: onNext,
+                    child: const Icon(Icons.arrow_forward),
+                  ),
+              ],
             ),
+            const SizedBox(height: 16),
+            if (ratingCount != null)
+              Text(
+                'Number of ratings: $ratingCount',
+                style: Theme.of(context).textTheme.bodyMedium,
+                textAlign: TextAlign.center,
+              ),
           ],
-        ),
-        const SizedBox(height: 16),
-        Text(
-          'Average rating: ${rating.toStringAsFixed(1)}',
-          style: Theme.of(context).textTheme.bodyMedium,
-          textAlign: TextAlign.center,
-        ),
-        const SizedBox(height: 16),
-        RatingBar.builder(
-          initialRating: rating,
-          minRating: 1,
-          direction: Axis.horizontal,
-          allowHalfRating: true,
-          itemCount: 5,
-          itemPadding: const EdgeInsets.symmetric(horizontal: 4.0),
-          itemBuilder: (context, _) => const Text(
-            '💩',
-            style: TextStyle(
-              fontSize: 32,
-              fontFamily: 'Roboto',
-              fontFamilyFallback: ['Noto Color Emoji'],
-            ),
-          ),
-          onRatingUpdate: onRatingUpdate ?? (_) {},
-        ),
-      ],
+        );
+      },
     );
   }
 }
