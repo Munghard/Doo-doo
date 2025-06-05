@@ -226,11 +226,26 @@ class SupabaseService {
     }
   }
 
-  getTotalDoodoosByUser(userid) {
+  Future<int> getTotalDoodoosByUser(userid) async{
     return supabase
         .from('files')
         .select('id')
         .eq('posted_by', userid)
         .then((response) => response.length);
+  }
+
+  Future deleteDoodoo(fileid) async {
+
+    try {
+      // Delete the file from storage
+      await supabase.storage.from('ipoop-files').remove([fileid]);
+
+      // Delete the file record from the database
+      await supabase.from('files').delete().eq('id', fileid);
+
+      debugPrint('Doodoo deleted successfully.');
+    } catch (e) {
+      debugPrint('Error deleting doodoo: $e');
+    }
   }
 }

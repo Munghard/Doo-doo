@@ -297,7 +297,7 @@ class _MyHomePageState extends State<MyHomePage> {
           ),
           IconButton(
             icon: const Icon(Icons.star),
-            tooltip: 'Poop of the Day',
+            tooltip: 'Doodoo of the Day',
             onPressed: () {
               Navigator.push(
                 context,
@@ -352,10 +352,13 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
         ],
       ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : Column(
-              children: [
+     body: _isLoading
+    ? const Center(child: CircularProgressIndicator())
+    : Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 800), // adjust as needed
+          child: Column(
+            children: [
                 Flexible(
                   flex: 4, // Allocate 40% of the height to the ImageViewer
                   child: Padding(
@@ -428,6 +431,9 @@ class _MyHomePageState extends State<MyHomePage> {
       //   child: const Text('💩', style: TextStyle(fontSize: 28)),
       // ),
       //   floatingActionButtonLocation: FloatingActionButtonLocation.miniEndTop,
+        ),
+      ),
     );
+
   }
 }

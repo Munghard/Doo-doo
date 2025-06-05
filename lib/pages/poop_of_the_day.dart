@@ -102,10 +102,13 @@ class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
     return Scaffold(
       appBar: AppBar(title: const Text('Poop of the Day')),
       body: _isLoadingImage
-          ? const Center(child: CircularProgressIndicator())
-          : _imageUrl == null
-              ? const Center(child: Text('No poop of the day available.'))
-              : Column(
+    ? const Center(child: CircularProgressIndicator())
+    : _imageUrl == null
+        ? const Center(child: Text('No poop of the day available.'))
+        : Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 600), // adjust as needed
+              child: Column(
                   children: [
                     Flexible(
                       flex: 6, // Allocate 60% of the height to the ImageViewer
@@ -164,6 +167,8 @@ class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
                     ),
                   ],
                 ),
+            ),
+          ),
     );
   }
 }
