@@ -14,6 +14,8 @@ class _ProfilePageState extends State<ProfilePage> {
   final SupabaseService _supabaseService = SupabaseService();
   String? profilePictureUrl;
   String? userEmail;
+  String? userName;
+  int totalDoodoos = 0; 
   bool _isLoading = true;
   bool _isLoggedIn = false;
 
@@ -37,6 +39,8 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() {
         userEmail = 'No email found';
         profilePictureUrl = null;
+        totalDoodoos = 0;
+        userName = 'No username found';
         _isLoading = false;
       });
       return;
@@ -45,13 +49,15 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final response = await Supabase.instance.client
           .from('profiles')
-          .select('profile_picture')
+          .select('profile_picture, user_name')
           .eq('id', user.id)
           .single();
 
       setState(() {
         userEmail = user.email;
         profilePictureUrl = response['profile_picture'] as String?;
+        userName = response['user_name'] as String? ?? 'No username found';
+        totalDoodoos = _supabaseService.getTotalDoodoosByUser(Supabase.instance.client.auth.currentUser?.id );
         _isLoading = false;
       });
     } catch (e) {
@@ -59,6 +65,8 @@ class _ProfilePageState extends State<ProfilePage> {
       setState(() {
         userEmail = user.email;
         profilePictureUrl = null;
+        totalDoodoos = 0; 
+        userName = 'No username found';
         _isLoading = false;
       });
     }
@@ -138,6 +146,14 @@ class _ProfilePageState extends State<ProfilePage> {
                   const SizedBox(height: 16),
                   Text(
                     userEmail ?? 'No email found',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  Text(
+                    userName ?? 'No username found',
+                    style: const TextStyle(fontSize: 16),
+                  ),
+                  Text(
+                    'Total doodoos: $totalDoodoos',
                     style: const TextStyle(fontSize: 16),
                   ),
                   const SizedBox(height: 16),

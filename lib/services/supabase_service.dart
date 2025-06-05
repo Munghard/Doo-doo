@@ -28,10 +28,11 @@ class SupabaseService {
         : 0.0;
   }
 
-  Future<void> addRating(int fileId, double rating) async {
+  Future<void> addRating(int fileId, double rating,String userid) async {
     await supabase.from('ratings').insert({
       'file_id': fileId,
       'rating': rating,
+      'rated_by': userid,
       'created_at': DateTime.now().toIso8601String(),
     });
   }
@@ -113,7 +114,7 @@ class SupabaseService {
           .eq('file_id', fileId)
           .order(
             'created_at',
-            ascending: true,
+            ascending: false,
           ); // Ensure consistent ascending order
 
       if (response == null || response.isEmpty) {
@@ -223,5 +224,13 @@ class SupabaseService {
       debugPrint('Error in changeProfilePicture: $e');
       return false;
     }
+  }
+
+  getTotalDoodoosByUser(userid) {
+    return supabase
+        .from('files')
+        .select('id')
+        .eq('posted_by', userid)
+        .then((response) => response.length);
   }
 }

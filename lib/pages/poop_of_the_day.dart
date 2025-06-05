@@ -125,7 +125,7 @@ class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
                       flex: 4, // Allocate 40% of the height to the CommentSection
                       child: Center(
                         child: FractionallySizedBox(
-                          widthFactor: 0.3, // Set the width to 30% of the screen width
+                          widthFactor: 1, // Set the width to 30% of the screen width
                           child: Padding(
                             padding: const EdgeInsets.symmetric(horizontal: 16.0),
                             child: CommentSection(

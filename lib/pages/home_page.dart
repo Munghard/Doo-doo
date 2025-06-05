@@ -164,8 +164,28 @@ class _MyHomePageState extends State<MyHomePage> {
   }
 
   Future<void> _addRating(int fileId, double rating) async {
+    if(supabase.auth.currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You must be logged in to rate')),
+      );
+      return;
+    }
+    final existingRatings = await Supabase.instance.client
+    .from('ratings')
+    .select('id')
+    .eq('file_id', fileId)
+    .eq('rated_by', Supabase.instance.client.auth.currentUser!.id)
+    .maybeSingle();
+
+    if (existingRatings != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('You have already rated this image')),
+      );
+      return;
+    }
     try {
-      await _supabaseService.addRating(fileId, rating);
+
+      await _supabaseService.addRating(fileId, rating, supabase.auth.currentUser!.id);
       final avgRating = await _supabaseService.fetchAverageRating(fileId);
       setState(() {
         _rating = avgRating.round();
@@ -218,8 +238,18 @@ class _MyHomePageState extends State<MyHomePage> {
     return (response.data['user_name'] as String?) ?? 'Anon';
   }
 
+  String getShortEmail(String email, {int maxLength = 6}) {
+    final username = email.contains('@') ? email.split('@')[0] : email;
+    if (username.length <= maxLength) return username;
+    return '${username.substring(0, maxLength)}...';
+  }
+
   @override
   Widget build(BuildContext context) {
+    
+    final email = Supabase.instance.client.auth.currentUser?.email ?? 'Guest';
+    final shortEmail = getShortEmail(email);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(
@@ -235,8 +265,8 @@ class _MyHomePageState extends State<MyHomePage> {
               borderRadius: BorderRadius.circular(20), // adjust for rounding
               child: Image.network(
                 profilePictureUrl!,
-                width: 32,
-                height: 32,
+                width: 24,
+                height: 24,
                 fit: BoxFit.cover,
               ),
             )
@@ -245,13 +275,26 @@ class _MyHomePageState extends State<MyHomePage> {
               borderRadius: BorderRadius.circular(20), // adjust for rounding
               child: Image.asset(
                 'assets/images/default-user.jpg',
-                width: 32,
-                height: 32,
+                width: 24,
+                height: 24,
                 fit: BoxFit.cover,
               ),
             ),
           const SizedBox(width: 8),
-          Text(Supabase.instance.client.auth.currentUser?.email ?? 'Guest'),
+         Flexible(
+          child: Text(
+            shortEmail,
+            overflow: TextOverflow.ellipsis,
+            maxLines: 2,
+          ),
+        ),
+          IconButton(
+            icon: const Icon(Icons.add_circle_outline),
+            tooltip: 'Take a doo-doo',
+            onPressed: () {
+              _addFile();
+            },
+          ),
           IconButton(
             icon: const Icon(Icons.star),
             tooltip: 'Poop of the Day',
@@ -262,48 +305,51 @@ class _MyHomePageState extends State<MyHomePage> {
               );
             },
           ),
-          IconButton(
-            icon: const Icon(Icons.person_2),
-            tooltip: 'Profile',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const ProfilePage()),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.app_registration_outlined),
-            tooltip: 'Register',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const RegisterPage(title: 'Register')),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.login_outlined),
-            tooltip: 'Login',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginPage(title: 'Login')),
-              );
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout_outlined),
-            tooltip: 'Logout',
-            onPressed: () async {
-              await Supabase.instance.client.auth.signOut();
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(builder: (context) => const LoginPage(title: 'Login')),
-              );
-            },
-          ),
-          const SizedBox(width: 64),
+          if (Supabase.instance.client.auth.currentUser != null)
+            IconButton(
+              icon: const Icon(Icons.person_2),
+              tooltip: 'Profile',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ProfilePage()),
+                );
+              },
+            ),
+          if (Supabase.instance.client.auth.currentUser == null)
+            IconButton(
+              icon: const Icon(Icons.app_registration_outlined),
+              tooltip: 'Register',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const RegisterPage(title: 'Register')),
+                );
+              },
+            ),
+          if (Supabase.instance.client.auth.currentUser == null)
+            IconButton(
+              icon: const Icon(Icons.login_outlined),
+              tooltip: 'Login',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginPage(title: 'Login')),
+                );
+              },
+            ),
+          if (Supabase.instance.client.auth.currentUser != null)
+            IconButton(
+              icon: const Icon(Icons.logout_outlined),
+              tooltip: 'Logout',
+              onPressed: () async {
+                await Supabase.instance.client.auth.signOut();
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(builder: (context) => const LoginPage(title: 'Login')),
+                );
+              },
+            ),
         ],
       ),
       body: _isLoading
@@ -324,9 +370,8 @@ class _MyHomePageState extends State<MyHomePage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 8),
                 Flexible(
-                  flex: 2, // Allocate 20% of the height to the RatingWidget
+                  flex: 1, // Allocate 20% of the height to the RatingWidget
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16.0),
                     child: RatingWidget(
@@ -339,53 +384,50 @@ class _MyHomePageState extends State<MyHomePage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
                 Flexible(
                   flex: 4, // Allocate 40% of the height to the CommentSection
                   child: Center(
-                    child: FractionallySizedBox(
-                      widthFactor: 0.3, // Set the width to 30% of the screen width
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                        child: CommentSection(
-                          fileId: _images.isNotEmpty ? _images[_currentIndex]['id'] : 0,
-                          comments: _images.isNotEmpty ? _comments : [],
-                          loading: _isLoadingComments,
-                          onCommentSubmitted: (commentText) async {
-                            if (_images.isEmpty) return;
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: CommentSection(
+                        fileId: _images.isNotEmpty ? _images[_currentIndex]['id'] : 0,
+                        comments: _images.isNotEmpty ? _comments : [],
+                        loading: _isLoadingComments,
+                        onCommentSubmitted: (commentText) async {
+                          if (_images.isEmpty) return;
 
-                            // Add comment with user info
-                            final currentUser = Supabase.instance.client.auth.currentUser;
-                            final userId = currentUser?.id;
+                          // Add comment with user info
+                          final currentUser = Supabase.instance.client.auth.currentUser;
+                          final userId = currentUser?.id;
 
-                            final userProfile = await _supabaseService.getUserProfile(userId);
+                          final userProfile = await _supabaseService.getUserProfile(userId);
 
-                            final newComment = {
-                              'text': commentText,
-                              'user': userProfile ?? {
-                                'profile_picture': '',
-                                'user_name': 'Anonymous',
-                              },
-                            };
+                          final newComment = {
+                            'text': commentText,
+                            'user': userProfile ?? {
+                              'profile_picture': '',
+                              'user_name': 'Anonymous',
+                            },
+                          };
 
-                            await _supabaseService.addComment(_images[_currentIndex]['id'], commentText);
+                          await _supabaseService.addComment(_images[_currentIndex]['id'], commentText);
 
-                            setState(() {
-                              _comments.insert(0, newComment);
-                            });
-                          },
-                        ),
+                          setState(() {
+                            _comments.insert(0, newComment);
+                          });
+                        },
                       ),
                     ),
                   ),
                 ),
               ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _isLoading ? null : _addFile,
-        tooltip: 'Add new doo-doo',
-        child: const Text('💩', style: TextStyle(fontSize: 28)),
-      ),
+      // floatingActionButton: FloatingActionButton(
+      //   onPressed: _isLoading ? null : _addFile,
+      //   tooltip: 'Add new doo-doo',
+      //   child: const Text('💩', style: TextStyle(fontSize: 28)),
+      // ),
+      //   floatingActionButtonLocation: FloatingActionButtonLocation.miniEndTop,
     );
   }
 }

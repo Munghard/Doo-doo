@@ -32,45 +32,56 @@ class ImageViewer extends StatelessWidget {
               style: Theme.of(context).textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
-            Text(
-              'By user: ${postedBy ?? 'Anon'}',
-              style: Theme.of(context).textTheme.titleSmall,
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 16),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
+            Column(
               children: [
-                if (showNavigation)
-                  ElevatedButton(
-                    onPressed: onPrev,
-                    child: const Icon(Icons.arrow_back),
-                  ),
-                const SizedBox(width: 10),
-                SizedBox(
-                  height: constraints.maxHeight * 0.8, // Use 80% of the allocated height
-                  child: Container(
-                    decoration: BoxDecoration(border: Border.all(color: Colors.brown, width: 4)),
-                    child: imageUrl != null && imageUrl!.isNotEmpty
-                        ? Image.network(imageUrl!, fit: BoxFit.contain)
-                        : const Center(child: Text('No images available')),
-                  ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      height: constraints.maxHeight * 0.5,
+                      child: Container(
+                        decoration: BoxDecoration(border: Border.all(color: Colors.brown, width: 4)),
+                        child: imageUrl != null && imageUrl!.isNotEmpty
+                            ? Image.network(imageUrl!, fit: BoxFit.contain)
+                            : const Center(child: Text('No images available')),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                if (showNavigation)
-                  ElevatedButton(
-                    onPressed: onNext,
-                    child: const Icon(Icons.arrow_forward),
+                Text(
+                  'By user: ${postedBy ?? 'Anon'}',
+                  style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Colors.grey),
+                  textAlign: TextAlign.center,
+                ),
+                // Navigation buttons (optional)
+                if (showNavigation) ...[
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton(
+                        onPressed: onPrev,
+                        child: const Icon(Icons.arrow_back),
+                      ),
+                      const SizedBox(width: 10),
+                      ElevatedButton(
+                        onPressed: onNext,
+                        child: const Icon(Icons.arrow_forward),
+                      ),
+                    ],
                   ),
+                ],
               ],
             ),
-            const SizedBox(height: 16),
-            if (ratingCount != null)
-              Text(
-                'Number of ratings: $ratingCount',
-                style: Theme.of(context).textTheme.bodyMedium,
-                textAlign: TextAlign.center,
-              ),
+            // const SizedBox(height: 16),
+            // if (ratingCount != null)
+            //   Text(
+            //     'Number of ratings: $ratingCount',
+            //     style: Theme.of(context).textTheme.bodyMedium,
+            //     textAlign: TextAlign.center,
+            //   ),
           ],
         );
       },
