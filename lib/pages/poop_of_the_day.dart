@@ -111,7 +111,7 @@ class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
               child: Column(
                   children: [
                     Flexible(
-                      flex: 6, // Allocate 60% of the height to the ImageViewer
+                      flex: 5, // Allocate 60% of the height to the ImageViewer
                       child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 16.0),
                         child: ImageViewer(
@@ -125,7 +125,7 @@ class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
                     ),
                     const SizedBox(height: 16),
                     Flexible(
-                      flex: 4, // Allocate 40% of the height to the CommentSection
+                      flex: 5, // Allocate 40% of the height to the CommentSection
                       child: Center(
                         child: FractionallySizedBox(
                           widthFactor: 1, // Set the width to 30% of the screen width
@@ -135,6 +135,13 @@ class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
                               fileId: _fileId ?? 0,
                               comments: _comments,
                               loading: _isLoadingComments,
+                              onCommentDeleted: (commentText) async{
+                              _loadComments();
+                              },
+                              onCommentEdited: (commentText) async{
+                              _loadComments();
+                              },
+
                               onCommentSubmitted: (commentText) async {
                                 if (_fileId == null) return;
 

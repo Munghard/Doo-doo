@@ -1,3 +1,4 @@
+import 'package:doodoo/pages/profile_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:doodoo/pages/home_page.dart';
@@ -26,6 +27,15 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const MyHomePage(title: '💩Doo-doo'),
+      onGenerateRoute: (settings) {
+        if (settings.name == '/profile') {
+          final userId = settings.arguments as String?;
+          return MaterialPageRoute(
+            builder: (context) => ProfilePage(userId: userId),
+          );
+        }
+        return null;
+      },
     );
   }
 }

@@ -48,7 +48,9 @@ class _MyHomePageState extends State<MyHomePage> {
     setState(() => _isLoadingComments = true);
 
     try {
-      final comments = await _supabaseService.getComments(_images[_currentIndex]['id']);
+      final comments = await _supabaseService.getComments(
+        _images[_currentIndex]['id'],
+      );
       setState(() => _comments = comments);
     } catch (e) {
       debugPrint('Error loading comments: $e');
@@ -66,7 +68,10 @@ class _MyHomePageState extends State<MyHomePage> {
       final images = await _supabaseService.fetchFiles();
       if (images.isNotEmpty) {
         // Get unique user IDs from images
-        final userIds = images.map((img) => img['posted_by'] as String?).whereType<String>().toSet();
+        final userIds = images
+            .map((img) => img['posted_by'] as String?)
+            .whereType<String>()
+            .toSet();
 
         // Fetch usernames for all user IDs
         final profiles = await Supabase.instance.client
@@ -76,10 +81,13 @@ class _MyHomePageState extends State<MyHomePage> {
 
         // Map id to user_name
         userNamesById = {
-          for (final p in profiles) p['id'] as String: p['user_name'] as String? ?? 'Anon',
+          for (final p in profiles)
+            p['id'] as String: p['user_name'] as String? ?? 'Anon',
         };
 
-        final avgRating = await _supabaseService.fetchAverageRating(images[0]['id']);
+        final avgRating = await _supabaseService.fetchAverageRating(
+          images[0]['id'],
+        );
 
         setState(() {
           _images = images;
@@ -128,7 +136,9 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _updateRating() async {
     if (_images.isNotEmpty) {
-      final avgRating = await _supabaseService.fetchAverageRating(_images[_currentIndex]['id']);
+      final avgRating = await _supabaseService.fetchAverageRating(
+        _images[_currentIndex]['id'],
+      );
       final response = await Supabase.instance.client
           .from('ratings')
           .select('id')
@@ -152,10 +162,24 @@ class _MyHomePageState extends State<MyHomePage> {
         return;
       }
 
-      final fileBytes = result.files.single.bytes!;
-      final fileName = result.files.single.name;
+      final bytes = result.files.single.bytes;
+      if (bytes == null) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('No file selected')));
+        setState(() => _isLoading = false);
+        return;
+      }
+      final resizedFile = await _supabaseService.resizeImageBytes(
+        bytes,
+        1024,
+        1024,
+      ); // returns File
 
-      await _supabaseService.uploadFile(fileName, fileBytes);
+      final fileName = result.files.first.name;
+
+      await _supabaseService.uploadFile(fileName, resizedFile);
+
       await _loadAllImages();
     } catch (e) {
       debugPrint('Error adding file: $e');
@@ -163,41 +187,47 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Future<void> _addRating(int fileId, double rating) async {
-    if(supabase.auth.currentUser == null) {
+  Future<void> _rateDoodoo(int fileId, double rating) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('You must be logged in to rate')),
       );
       return;
     }
-    final existingRatings = await Supabase.instance.client
-    .from('ratings')
-    .select('id')
-    .eq('file_id', fileId)
-    .eq('rated_by', Supabase.instance.client.auth.currentUser!.id)
-    .maybeSingle();
 
-    if (existingRatings != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You have already rated this image')),
-      );
-      return;
-    }
     try {
+      final existingRating = await Supabase.instance.client
+          .from('ratings')
+          .select('id')
+          .eq('file_id', fileId)
+          .eq('rated_by', user.id)
+          .maybeSingle();
 
-      await _supabaseService.addRating(fileId, rating, supabase.auth.currentUser!.id);
+      if (existingRating != null) {
+        // Update existing rating
+        await Supabase.instance.client
+            .from('ratings')
+            .update({'rating': rating})
+            .eq('id', existingRating['id']);
+      } else {
+        // Insert new rating
+        await _supabaseService.addRating(fileId, rating, user.id);
+      }
+
       final avgRating = await _supabaseService.fetchAverageRating(fileId);
       setState(() {
         _rating = avgRating.round();
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Rating submitted!')),
-      );
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Rating submitted!')));
     } catch (e) {
-      debugPrint('Error adding rating: $e');
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to submit rating: $e')),
-      );
+      debugPrint('Error submitting rating: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to submit rating: $e')));
     }
   }
 
@@ -244,9 +274,15 @@ class _MyHomePageState extends State<MyHomePage> {
     return '${username.substring(0, maxLength)}...';
   }
 
+  Future<void> _refreshAll() async {
+    await _loadAllImages();
+    await _loadProfile();
+    await _loadComments();
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
-    
     final email = Supabase.instance.client.auth.currentUser?.email ?? 'Guest';
     final shortEmail = getShortEmail(email);
 
@@ -281,13 +317,13 @@ class _MyHomePageState extends State<MyHomePage> {
               ),
             ),
           const SizedBox(width: 8),
-         Flexible(
-          child: Text(
-            shortEmail,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
+          Flexible(
+            child: Text(
+              shortEmail,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+            ),
           ),
-        ),
           IconButton(
             icon: const Icon(Icons.add_circle_outline),
             tooltip: 'Take a doo-doo',
@@ -301,7 +337,9 @@ class _MyHomePageState extends State<MyHomePage> {
             onPressed: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => const PoopOfTheDayPage()),
+                MaterialPageRoute(
+                  builder: (context) => const PoopOfTheDayPage(),
+                ),
               );
             },
           ),
@@ -312,7 +350,7 @@ class _MyHomePageState extends State<MyHomePage> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const ProfilePage()),
+                  MaterialPageRoute(builder: (context) => ProfilePage(userId:Supabase.instance.client.auth.currentUser!.id)),
                 );
               },
             ),
@@ -323,7 +361,9 @@ class _MyHomePageState extends State<MyHomePage> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const RegisterPage(title: 'Register')),
+                  MaterialPageRoute(
+                    builder: (context) => const RegisterPage(title: 'Register'),
+                  ),
                 );
               },
             ),
@@ -334,7 +374,9 @@ class _MyHomePageState extends State<MyHomePage> {
               onPressed: () {
                 Navigator.push(
                   context,
-                  MaterialPageRoute(builder: (context) => const LoginPage(title: 'Login')),
+                  MaterialPageRoute(
+                    builder: (context) => const LoginPage(title: 'Login'),
+                  ),
                 );
               },
             ),
@@ -346,94 +388,124 @@ class _MyHomePageState extends State<MyHomePage> {
                 await Supabase.instance.client.auth.signOut();
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (context) => const LoginPage(title: 'Login')),
+                  MaterialPageRoute(
+                    builder: (context) => const LoginPage(title: 'Login'),
+                  ),
                 );
               },
             ),
         ],
       ),
-     body: _isLoading
-    ? const Center(child: CircularProgressIndicator())
-    : Center(
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 800), // adjust as needed
-          child: Column(
-            children: [
-                Flexible(
-                  flex: 4, // Allocate 40% of the height to the ImageViewer
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: ImageViewer(
-                      imageUrl: _images.isNotEmpty ? _images[_currentIndex]['file_url'] : null,
-                      imageName: _images.isNotEmpty ? _images[_currentIndex]['file_name'] : null,
-                      postedBy: postedBy ?? 'Anon',
-                      onNext: _nextImage,
-                      onPrev: _prevImage,
-                      ratingCount: _ratingCount, // Pass the rating count
-                    ),
-                  ),
-                ),
-                Flexible(
-                  flex: 1, // Allocate 20% of the height to the RatingWidget
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: RatingWidget(
-                      rating: _rating.toDouble(),
-                      onRatingUpdate: (rating) {
-                        if (_images.isNotEmpty) {
-                          _addRating(_images[_currentIndex]['id'], rating);
-                        }
-                      },
-                    ),
-                  ),
-                ),
-                Flexible(
-                  flex: 4, // Allocate 40% of the height to the CommentSection
-                  child: Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                      child: CommentSection(
-                        fileId: _images.isNotEmpty ? _images[_currentIndex]['id'] : 0,
-                        comments: _images.isNotEmpty ? _comments : [],
-                        loading: _isLoadingComments,
-                        onCommentSubmitted: (commentText) async {
-                          if (_images.isEmpty) return;
-
-                          // Add comment with user info
-                          final currentUser = Supabase.instance.client.auth.currentUser;
-                          final userId = currentUser?.id;
-
-                          final userProfile = await _supabaseService.getUserProfile(userId);
-
-                          final newComment = {
-                            'text': commentText,
-                            'user': userProfile ?? {
-                              'profile_picture': '',
-                              'user_name': 'Anonymous',
-                            },
-                          };
-
-                          await _supabaseService.addComment(_images[_currentIndex]['id'], commentText);
-
-                          setState(() {
-                            _comments.insert(0, newComment);
-                          });
-                        },
+      body: RefreshIndicator(
+        onRefresh: _refreshAll,
+        child: _isLoading
+            ? const Center(child: CircularProgressIndicator())
+            : Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(
+                    maxWidth: 800,
+                  ), // adjust as needed
+                  child: Column(
+                    children: [
+                      Flexible(
+                        flex:
+                            5, // Allocate 50% of the height to the ImageViewer
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                          child: ImageViewer(
+                            imageUrl: _images.isNotEmpty
+                                ? _images[_currentIndex]['file_url']
+                                : null,
+                            imageName: _images.isNotEmpty
+                                ? _images[_currentIndex]['file_name']
+                                : null,
+                            postedBy: postedBy ?? 'Anon',
+                            onNext: _nextImage,
+                            onPrev: _prevImage,
+                            ratingCount: _ratingCount, // Pass the rating count
+                          ),
+                        ),
                       ),
-                    ),
+                      Flexible(
+                        flex:
+                            1, // Allocate 10% of the height to the RatingWidget
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                          child: RatingWidget(
+                            rating: _rating.toDouble(),
+                            ratingCount: _ratingCount, // Pass the rating count
+                            onRatingUpdate: (rating) {
+                              if (_images.isNotEmpty) {
+                                _rateDoodoo(
+                                  _images[_currentIndex]['id'],
+                                  rating,
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                      Flexible(
+                        flex:
+                            4, // Allocate 40% of the height to the CommentSection
+                        child: Center(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 16.0,
+                            ),
+                            child: CommentSection(
+                              fileId: _images.isNotEmpty
+                                  ? _images[_currentIndex]['id']
+                                  : 0,
+                              comments: _images.isNotEmpty ? _comments : [],
+                              loading: _isLoadingComments,
+                              onCommentDeleted: (commentText) async {
+                                await _refreshAll();
+                              },
+                              onCommentEdited: (commentText) async {
+                                await _refreshAll();
+                              },
+                              onCommentSubmitted: (commentText) async {
+                                if (_images.isEmpty) return;
+
+                                // Add comment with user info
+                                final currentUser =
+                                    Supabase.instance.client.auth.currentUser;
+                                final userId = currentUser?.id;
+
+                                final userProfile = await _supabaseService
+                                    .getUserProfile(userId);
+
+                                final newComment = {
+                                  'text': commentText,
+                                  'user':
+                                      userProfile ??
+                                      {
+                                        'profile_picture': '',
+                                        'user_name': 'Anonymous',
+                                      },
+                                };
+
+                                await _supabaseService.addComment(
+                                  _images[_currentIndex]['id'],
+                                  commentText,
+                                );
+
+                                setState(() {
+                                  _comments.insert(0, newComment);
+                                });
+
+                                await _refreshAll();
+                              },
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
-            ),
-      // floatingActionButton: FloatingActionButton(
-      //   onPressed: _isLoading ? null : _addFile,
-      //   tooltip: 'Add new doo-doo',
-      //   child: const Text('💩', style: TextStyle(fontSize: 28)),
-      // ),
-      //   floatingActionButtonLocation: FloatingActionButtonLocation.miniEndTop,
-        ),
+              ),
       ),
     );
-
   }
 }

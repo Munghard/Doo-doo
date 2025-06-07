@@ -20,68 +20,68 @@ class ImageViewer extends StatelessWidget {
     this.ratingCount, // Optional property
   });
 
+
   @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
         return Column(
-          mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
               imageName ?? 'No image selected',
               style: Theme.of(context).textTheme.titleMedium,
               textAlign: TextAlign.center,
             ),
-            Column(
-              children: [
-                const SizedBox(height: 16),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(width: 10),
-                    SizedBox(
-                      height: constraints.maxHeight * 0.5,
-                      child: Container(
-                        decoration: BoxDecoration(border: Border.all(color: Colors.brown, width: 4)),
+            const SizedBox(height: 16),
+            Flexible(
+              child: GestureDetector(
+                onTap: () {
+                  showDialog(
+                    context: context,
+                    builder: (_) => Dialog(
+                      insetPadding: const EdgeInsets.all(10),
+                      child: InteractiveViewer(
                         child: imageUrl != null && imageUrl!.isNotEmpty
                             ? Image.network(imageUrl!, fit: BoxFit.contain)
                             : const Center(child: Text('No images available')),
                       ),
                     ),
-                  ],
+                  );
+                },
+                child: Center(
+                  child: Container(
+                    decoration: BoxDecoration(border: Border.all(color: Colors.brown, width: 4)),
+                    clipBehavior: Clip.hardEdge,
+                    child: imageUrl != null && imageUrl!.isNotEmpty
+                        ? Image.network(imageUrl!, fit: BoxFit.contain)
+                        : const Center(child: Text('No images available')),
+                  ),
                 ),
-                Text(
-                  'By user: ${postedBy ?? 'Anon'}',
-                  style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Colors.grey),
-                  textAlign: TextAlign.center,
-                ),
-                // Navigation buttons (optional)
-                if (showNavigation) ...[
-                  const SizedBox(height: 10),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      ElevatedButton(
-                        onPressed: onPrev,
-                        child: const Icon(Icons.arrow_back),
-                      ),
-                      const SizedBox(width: 10),
-                      ElevatedButton(
-                        onPressed: onNext,
-                        child: const Icon(Icons.arrow_forward),
-                      ),
-                    ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'By user: ${postedBy ?? 'Anon'}',
+              style: Theme.of(context).textTheme.titleSmall?.copyWith(color: Colors.grey),
+              textAlign: TextAlign.center,
+            ),
+            if (showNavigation) ...[
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  ElevatedButton(
+                    onPressed: onPrev,
+                    child: const Icon(Icons.arrow_back),
+                  ),
+                  const SizedBox(width: 10),
+                  ElevatedButton(
+                    onPressed: onNext,
+                    child: const Icon(Icons.arrow_forward),
                   ),
                 ],
-              ],
-            ),
-            // const SizedBox(height: 16),
-            // if (ratingCount != null)
-            //   Text(
-            //     'Number of ratings: $ratingCount',
-            //     style: Theme.of(context).textTheme.bodyMedium,
-            //     textAlign: TextAlign.center,
-            //   ),
+              ),
+            ],
           ],
         );
       },

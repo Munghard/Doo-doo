@@ -4,7 +4,8 @@ import 'package:doodoo/services/supabase_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class ProfilePage extends StatefulWidget {
-  const ProfilePage({super.key});
+  final String? userId;
+  const ProfilePage({super.key, this.userId});
 
   @override
   State<ProfilePage> createState() => _ProfilePageState();
@@ -16,16 +17,16 @@ class _ProfilePageState extends State<ProfilePage> {
   String? userEmail;
   String? userName;
   int totalDoodoos = 0;
-  List<dynamic> doodooList = [];  
   bool _isLoading = true;
   bool _isLoggedIn = false;
+  List<Map<String, dynamic>> userDoodoos = []; // Add this line
 
   @override
   void initState() {
     super.initState();
     _checkLoginStatus();
-    _loadProfile();
-    _loadUserDoodoos();
+    _loadProfile(widget.userId);
+    _loadUserDoodoos(); // Add this line
   }
 
   Future<void> _checkLoginStatus() async {
@@ -35,68 +36,50 @@ class _ProfilePageState extends State<ProfilePage> {
     });
   }
 
-  Future<void> _loadUserDoodoos() async {
-  final userId = Supabase.instance.client.auth.currentUser?.id;
-  if (userId == null) return;
+  Future<void> _loadProfile(String? userId) async {
+  // Validate userId before querying
+  final validUserId = userId ?? Supabase.instance.client.auth.currentUser?.id;
+  if (validUserId == null || validUserId.isEmpty) {
+    setState(() {
+      userEmail = 'No email found';
+      profilePictureUrl = null;
+      totalDoodoos = 0;
+      userName = 'No username found';
+      _isLoading = false;
+    });
+    return;
+  }
 
   try {
     final response = await Supabase.instance.client
-        .from('files')
-        .select('id, file_name, created_at, file_url')
-        .eq('posted_by', userId)
-        .order('created_at', ascending: false); // optional: newest first
+        .from('profiles')
+        .select('profile_picture, user_name')
+        .eq('id', validUserId)
+        .single();
+
+    final count = await _supabaseService.getTotalDoodoosByUser(validUserId);
 
     setState(() {
-      doodooList = response;
+      profilePictureUrl = response['profile_picture'] as String?;
+      userName = response['user_name'] as String? ?? 'No username found';
+      totalDoodoos = count;
+      _isLoading = false;
     });
   } catch (e) {
-    debugPrint('Error loading doodoo list: $e');
+    debugPrint('Error loading profile: $e');
+    setState(() {
+      profilePictureUrl = null;
+      totalDoodoos = 0;
+      userName = 'No username found';
+      _isLoading = false;
+    });
   }
 }
 
-  Future<void> _loadProfile() async {
-    final user = Supabase.instance.client.auth.currentUser;
-    if (user == null) {
-      setState(() {
-        userEmail = 'No email found';
-        profilePictureUrl = null;
-        totalDoodoos = 0;
-        userName = 'No username found';
-        _isLoading = false;
-      });
-      return;
-    }
-
-    try {
-      final response = await Supabase.instance.client
-          .from('profiles')
-          .select('profile_picture, user_name')
-          .eq('id', user.id)
-          .single();
-
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      final count = await _supabaseService.getTotalDoodoosByUser(userId);
-
-      setState(() {
-        userEmail = user.email;
-        profilePictureUrl = response['profile_picture'] as String?;
-        userName = response['user_name'] as String? ?? 'No username found';
-        totalDoodoos = count;
-        _isLoading = false;
-      });
-    } catch (e) {
-      debugPrint('Error loading profile: $e');
-      setState(() {
-        userEmail = user.email;
-        profilePictureUrl = null;
-        totalDoodoos = 0;
-        userName = 'No username found';
-        _isLoading = false;
-      });
-    }
-  }
-
-  Future<void> _uploadProfilePicture() async {
+  Future<void> _uploadProfilePicture(String? userId) async {
+    // Only allow changing own profile picture
+    final currentUserId = Supabase.instance.client.auth.currentUser?.id;
+    if (widget.userId != null && widget.userId != currentUserId) return;
     try {
       final result = await FilePicker.platform.pickFiles();
       if (result == null || result.files.isEmpty) return;
@@ -111,7 +94,7 @@ class _ProfilePageState extends State<ProfilePage> {
       }
 
       await _supabaseService.changeProfilePicture(user.id, file);
-      await _loadProfile(); // Reload profile to update the picture
+      await _loadProfile(userId); // Reload profile to update the picture
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Profile picture updated successfully!')),
       );
@@ -122,6 +105,24 @@ class _ProfilePageState extends State<ProfilePage> {
       );
     }
   }
+
+  // Add this method to fetch user's doodoos
+  Future<void> _loadUserDoodoos() async {
+  final userId = widget.userId ?? Supabase.instance.client.auth.currentUser?.id;
+  if (userId == null || userId.isEmpty) return;
+  try {
+    final response = await Supabase.instance.client
+        .from('files')
+        .select('id, file_name, created_at, file_url')
+        .eq('posted_by', userId)
+        .order('created_at', ascending: false);
+    setState(() {
+      userDoodoos = List<Map<String, dynamic>>.from(response);
+    });
+  } catch (e) {
+    debugPrint('Error loading user doodoos: $e');
+  }
+}
 
   @override
   Widget build(BuildContext context) {
@@ -137,122 +138,141 @@ class _ProfilePageState extends State<ProfilePage> {
         automaticallyImplyLeading: true, // Enable the back arrow
       ),
       body: _isLoading
-    ? const Center(child: CircularProgressIndicator())
-    : Center(
-        child:Padding(padding: const EdgeInsets.all(16.0),
-          child:  // Use ConstrainedBox to limit the width of the profile content
-         ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 600), // adjust width as needed
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.start,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-                  const Text(
-                    'Profile Page',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 16),
-                  if (profilePictureUrl != null &&
-                      profilePictureUrl!.isNotEmpty)
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: Image.network(
-                        profilePictureUrl!,
-                        width: 100,
-                        height: 100,
-                        fit: BoxFit.cover,
-                      ),
-                    )
-                  else
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(20),
-                      child: Image.asset(
-                        'assets/images/default-user.jpg',
-                        width: 100,
-                        height: 100,
-                        fit: BoxFit.cover,
-                      ),
-                    ),
-                  const SizedBox(height: 16),
-                  Text(
-                    userEmail ?? 'No email found',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  Text(
-                    userName ?? 'No username found',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  Text(
-                    'Total doodoos: $totalDoodoos',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  const SizedBox(height: 16),
-                  if (_isLoggedIn) ...[
+          ? const Center(child: CircularProgressIndicator())
+          : Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 800),
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
                     const Text(
-                      'Change profile picture by uploading a file below:',
-                      style: TextStyle(fontSize: 14),
+                      'Profile Page',
+                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                     ),
+                    const SizedBox(height: 16),
+                    if (profilePictureUrl != null &&
+                        profilePictureUrl!.isNotEmpty)
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: Image.network(
+                          profilePictureUrl!,
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.cover,
+                        ),
+                      )
+                    else
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(20),
+                        child: Image.asset(
+                          'assets/images/default-user.jpg',
+                          width: 100,
+                          height: 100,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    const SizedBox(height: 16),
+                    Text(
+                      userEmail ?? 'No email found',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    Text(
+                      userName ?? 'No username found',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    Text(
+                      'Total doodoos: $totalDoodoos',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(height: 16),
+                    // Only show upload button if viewing own profile
+                    if (_isLoggedIn && (widget.userId == null || widget.userId == Supabase.instance.client.auth.currentUser?.id)) ...[
+                      const Text(
+                        'Change profile picture by uploading a file below:',
+                        style: TextStyle(fontSize: 14),
+                      ),
+                      const SizedBox(height: 20),
+                      ElevatedButton(
+                        onPressed:() => _uploadProfilePicture(widget.userId),
+                        child: const Text('Upload File'),
+                      ),
+                    ] else
+                      const Text(
+                        'Please log in to upload a profile picture.',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
                     const SizedBox(height: 20),
-                    ElevatedButton(
-                      onPressed: _uploadProfilePicture,
-                      child: const Text('Upload File'),
-                    ),
-                  ] else
                     const Text(
-                      'Please log in to upload a profile picture.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
+                      'User Doodoos:',
+                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                     ),
-                  const SizedBox(height: 20),
-                    Text('User doodoos:', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                    if(doodooList.isNotEmpty)
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: doodooList.length,
-                        itemBuilder: (context, index) {
-                          final doodoo = doodooList[index];
-                          return ListTile(
-                            leading: CircleAvatar(
-                              backgroundImage: NetworkImage(
-                                doodoo['file_url'] ?? 'https://via.placeholder.com/150',
-                              ),
-                            ),
+                    const SizedBox(height: 8),
+                    if (userDoodoos.isEmpty)
+                      const Center(child: Text('No doodoos found.'))
+                    else
+                      ...userDoodoos.map((doodoo) => ListTile(
+                            leading: (doodoo['file_url'] != null && doodoo['file_url'].toString().isNotEmpty)
+                                ? Image.network(
+                                    doodoo['file_url'],
+                                    width: 56,
+                                    height: 56,
+                                    fit: BoxFit.cover,
+                                  )
+                                : const Icon(Icons.image_not_supported, size: 56),
                             title: Text(doodoo['file_name'] ?? 'No name'),
                             subtitle: Text(
-                              'Uploaded on: ${doodoo['created_at'] ?? 'Unknown date'}',
+                              doodoo['created_at'] != null
+                                  ? doodoo['created_at'].toString().split('T').first
+                                  : '',
+                              style: const TextStyle(fontSize: 12, color: Colors.grey),
                             ),
                             trailing: IconButton(
-                              icon: const Icon(Icons.delete),
+                              icon: const Icon(Icons.delete, color: Colors.red),
+                              tooltip: 'Delete doodoo',
                               onPressed: () async {
-                                final response = await _supabaseService
-                                    .deleteDoodoo(doodoo['id']);
-                                if (response) {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Doodoo deleted successfully!'),
-                                    ),
-                                  );
-                                  _loadUserDoodoos(); // Refresh the list
-                                } else {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Failed to delete doodoo'),
-                                    ),
-                                  );
+                                final confirm = await showDialog<bool>(
+                                  context: context,
+                                  builder: (context) => AlertDialog(
+                                    title: const Text('Delete Doodoo'),
+                                    content: const Text('Are you sure you want to delete this doodoo?'),
+                                    actions: [
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(false),
+                                        child: const Text('Cancel'),
+                                      ),
+                                      TextButton(
+                                        onPressed: () => Navigator.of(context).pop(true),
+                                        child: const Text('Delete', style: TextStyle(color: Colors.red)),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                                if (confirm == true) {
+                                  final success = await _supabaseService.deleteDoodoo(doodoo['id']);
+                                  if (success) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Doodoo deleted!')),
+                                    );
+                                    await _loadUserDoodoos();
+                                    setState(() {
+                                      totalDoodoos = totalDoodoos > 0 ? totalDoodoos - 1 : 0;
+                                    });
+                                  } else {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(content: Text('Failed to delete doodoo')),
+                                    );
+                                  }
                                 }
                               },
                             ),
-                          );
-                        },
-                      ),
-                    )
-                ],
+                          )),
+                  ],
+                ),
               ),
             ),
-        ),
-      ),
     );
   }
 }

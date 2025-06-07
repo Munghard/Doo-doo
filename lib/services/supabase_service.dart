@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-
+import 'package:image/image.dart' as img;
 import 'package:file_picker/src/platform_file.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -11,8 +11,9 @@ class SupabaseService {
     final response = await supabase
         .from('files')
         .select('id, file_url, file_name, posted_by')
-        .order('created_at', ascending: false)
-        .limit(10);
+        .ilike('file_url', '%ipoop-files%')  
+        .order('created_at', ascending: false);
+        // .limit(10);
     return List<Map<String, dynamic>>.from(response);
   }
 
@@ -45,6 +46,18 @@ class SupabaseService {
       'created_at': DateTime.now().toUtc().toIso8601String(),
     });
   }
+  // add edited_at field to track when a comment was edited later
+  Future<void> editComment(int commentId, String content) async {
+    await supabase.from('comments').update({
+      'content': content,
+    }).eq('id', commentId);
+  }
+
+  Future<void> deleteComment(int commentId, String userId) async {
+  await supabase.from('comments').delete()
+    .eq('id', commentId)
+    .eq('created_by', userId);
+  }
 
   Future<String> uploadFile(String fileName, Uint8List bytes) async {
     final uniqueFileName = '${DateTime.now().millisecondsSinceEpoch}_$fileName';
@@ -58,9 +71,33 @@ class SupabaseService {
     final fileUrl = supabase.storage
         .from('ipoop-files')
         .getPublicUrl(uniqueFileName);
+
     await supabase.from('files').insert({
       'file_name': fileName,
       'file_url': fileUrl,
+      'bucket': 'ipoop-files', // Specify the bucket for files
+      'posted_by': supabase.auth.currentUser?.id ?? 'anonymous',
+      'created_at': DateTime.now().toIso8601String(),
+    });
+    return fileUrl;
+  }
+  Future<String> uploadProfilePicture(String fileName, Uint8List bytes) async {
+    final uniqueFileName = '${DateTime.now().millisecondsSinceEpoch}_$fileName';
+    await supabase.storage
+        .from('profile-pictures')
+        .uploadBinary(
+          uniqueFileName,
+          bytes,
+          fileOptions: const FileOptions(contentType: 'image/*', upsert: true),
+        );
+    final fileUrl = supabase.storage
+        .from('profile-pictures')
+        .getPublicUrl(uniqueFileName);
+
+    await supabase.from('files').insert({
+      'file_name': fileName,
+      'file_url': fileUrl,
+      'bucket': 'profile-pictures', // Specify the bucket for profile pictures
       'posted_by': supabase.auth.currentUser?.id ?? 'anonymous',
       'created_at': DateTime.now().toIso8601String(),
     });
@@ -110,7 +147,7 @@ class SupabaseService {
     try {
       final response = await supabase
           .from('comments')
-          .select('content, created_by, created_at')
+          .select('content, created_by, created_at, id')
           .eq('file_id', fileId)
           .order(
             'created_at',
@@ -150,6 +187,7 @@ class SupabaseService {
             profilesById[userId] ??
             {'user_name': 'Anonymous', 'profile_picture': ''};
         return {
+          'id': comment['id'] as int? ?? 0, // Ensure id is always present
           'text': comment['content'] ?? '',
           'user': profile,
           'created_at': comment['created_at'],
@@ -186,45 +224,66 @@ class SupabaseService {
   }
 
   Future<bool> changeProfilePicture(String userId, PlatformFile file) async {
-    if (userId.isEmpty) {
-      debugPrint('Error: User ID is empty.');
-      return false;
-    }
-
-    final fileName = file.name;
-    final bytes = file.bytes;
-
-    if (bytes == null) {
-      debugPrint('Error: File bytes are null.');
-      return false;
-    }
-
-    try {
-      // Validate file type (optional, based on your requirements)
-      if (!fileName.toLowerCase().endsWith('.jpg') &&
-          !fileName.toLowerCase().endsWith('.jpeg') &&
-          !fileName.toLowerCase().endsWith('.png') &&
-          !fileName.toLowerCase().endsWith('.gif')) {
-        debugPrint('Error: Unsupported file type.');
-        return false;
-      }
-
-      // Upload the file to Supabase storage
-      final url = await uploadFile(fileName, bytes);
-
-      // Update the profile picture URL in the database
-      await supabase
-          .from('profiles')
-          .update({'profile_picture': url})
-          .eq('id', userId);
-
-      debugPrint('Profile picture updated successfully.');
-      return true;
-    } catch (e) {
-      debugPrint('Error in changeProfilePicture: $e');
-      return false;
-    }
+  if (userId.isEmpty) {
+    debugPrint('Error: User ID is empty.');
+    return false;
   }
+
+  final bytes = file.bytes;
+  if (bytes == null) {
+    debugPrint('Error: File bytes are null.');
+    return false;
+  }
+
+  final resizedBytes = await resizeImageBytes(bytes, 256, 256);
+  final fileName = file.name;
+
+  if (!fileName.toLowerCase().endsWith('.jpg') &&
+      !fileName.toLowerCase().endsWith('.jpeg') &&
+      !fileName.toLowerCase().endsWith('.png') &&
+      !fileName.toLowerCase().endsWith('.gif')) {
+    debugPrint('Error: Unsupported file type.');
+    return false;
+  }
+
+  try {
+    // Step 1: Get current profile picture URL
+    final profile = await supabase
+        .from('profiles')
+        .select('profile_picture')
+        .eq('id', userId)
+        .maybeSingle();
+
+    final oldUrl = profile?['profile_picture'];
+    
+    // Step 2: Extract and delete old picture if exists
+    if (oldUrl != null && oldUrl.toString().isNotEmpty) {
+      final uri = Uri.parse(oldUrl);
+      final pathSegments = uri.pathSegments;
+      if (pathSegments.length >= 2) {
+        final filePath = pathSegments.sublist(1).join('/'); // skip "storage/v1/object/public"
+        await supabase.storage.from('profile-pictures').remove([filePath]);
+      }
+    }
+
+    // Step 3: Upload new picture
+    final url = await uploadProfilePicture(fileName, resizedBytes);
+
+    // Step 4: Update DB
+    await supabase
+        .from('profiles')
+        .update({'profile_picture': url})
+        .eq('id', userId);
+
+    debugPrint('Profile picture updated successfully.');
+    return true;
+  } catch (e) {
+    debugPrint('Error in changeProfilePicture: $e');
+    return false;
+  }
+}
+
+
 
   Future<int> getTotalDoodoosByUser(userid) async{
     return supabase
@@ -234,18 +293,54 @@ class SupabaseService {
         .then((response) => response.length);
   }
 
-  Future deleteDoodoo(fileid) async {
+Future<bool> deleteDoodoo(int fileId) async {
+  try {
+    final response = await supabase
+        .from('files')
+        .select('file_url, bucket')
+        .eq('id', fileId)
+        .maybeSingle();
 
-    try {
-      // Delete the file from storage
-      await supabase.storage.from('ipoop-files').remove([fileid]);
-
-      // Delete the file record from the database
-      await supabase.from('files').delete().eq('id', fileid);
-
-      debugPrint('Doodoo deleted successfully.');
-    } catch (e) {
-      debugPrint('Error deleting doodoo: $e');
+    if (response == null) {
+      debugPrint('File not found in database.');
+      return false;
     }
+
+    final String bucket = response['bucket'];
+    final String fileUrl = response['file_url'];
+    final filePath = Uri.decodeFull(fileUrl.split('/').last);
+
+    await supabase.storage.from(bucket).remove([filePath]);
+    await supabase.from('files').delete().eq('id', fileId);
+
+    debugPrint('Doodoo deleted successfully.');
+    return true;
+  } catch (e) {
+    debugPrint('Error deleting doodoo: $e');
+    return false;
   }
+}
+
+
+  Future<Uint8List> resizeImageBytes(Uint8List originalBytes, int maxWidth, int maxHeight) async {
+  final image = img.decodeImage(originalBytes);
+  if (image == null) throw Exception("Failed to decode image");
+
+  final originalWidth = image.width;
+  final originalHeight = image.height;
+
+  // Calculate target size preserving aspect ratio
+  final widthRatio = maxWidth / originalWidth;
+  final heightRatio = maxHeight / originalHeight;
+  final scale = widthRatio < heightRatio ? widthRatio : heightRatio;
+
+  final newWidth = (originalWidth * scale).round();
+  final newHeight = (originalHeight * scale).round();
+
+  final resized = img.copyResize(image, width: newWidth, height: newHeight);
+  final resizedBytes = img.encodeJpg(resized, quality: 85);
+
+  return Uint8List.fromList(resizedBytes);
+}
+
 }

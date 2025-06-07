@@ -69,7 +69,7 @@ class _RegisterPageState extends State<RegisterPage> {
                   }
 
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Registration successful!')),
+                    const SnackBar(content: Text('Registration successful! Confirm your email to log in.')),
                   );
                 } catch (e) {
                   ScaffoldMessenger.of(context).showSnackBar(
