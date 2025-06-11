@@ -17,6 +17,7 @@ class _ProfilePageState extends State<ProfilePage> {
   String? userEmail;
   String? userName;
   int totalDoodoos = 0;
+  int score  = 0;
   bool _isLoading = true;
   bool _isLoggedIn = false;
   List<Map<String, dynamic>> userDoodoos = []; // Add this line
@@ -45,6 +46,7 @@ class _ProfilePageState extends State<ProfilePage> {
       profilePictureUrl = null;
       totalDoodoos = 0;
       userName = 'No username found';
+      score = 0; // Initialize score to 0
       _isLoading = false;
     });
     return;
@@ -53,7 +55,7 @@ class _ProfilePageState extends State<ProfilePage> {
   try {
     final response = await Supabase.instance.client
         .from('profiles')
-        .select('profile_picture, user_name')
+        .select('profile_picture, user_name, score')
         .eq('id', validUserId)
         .single();
 
@@ -63,6 +65,7 @@ class _ProfilePageState extends State<ProfilePage> {
       profilePictureUrl = response['profile_picture'] as String?;
       userName = response['user_name'] as String? ?? 'No username found';
       totalDoodoos = count;
+      score = response.score; // Example scoring logic, adjust as needed
       _isLoading = false;
     });
   } catch (e) {
@@ -70,6 +73,7 @@ class _ProfilePageState extends State<ProfilePage> {
     setState(() {
       profilePictureUrl = null;
       totalDoodoos = 0;
+      score = 0; 
       userName = 'No username found';
       _isLoading = false;
     });
@@ -113,7 +117,7 @@ class _ProfilePageState extends State<ProfilePage> {
   try {
     final response = await Supabase.instance.client
         .from('files')
-        .select('id, file_name, created_at, file_url')
+        .select('id, file_name, created_at, file_url, posted_by')
         .eq('posted_by', userId)
         .order('created_at', ascending: false);
     setState(() {
@@ -171,15 +175,27 @@ class _ProfilePageState extends State<ProfilePage> {
                           fit: BoxFit.cover,
                         ),
                       ),
-                    const SizedBox(height: 16),
-                    Text(
-                      userEmail ?? 'No email found',
-                      style: const TextStyle(fontSize: 16),
-                    ),
+                    // const SizedBox(height: 16),
+                    // Text(
+                    //   userEmail ?? 'No email found',
+                    //   style: const TextStyle(fontSize: 16),
+                    // ),
                     Text(
                       userName ?? 'No username found',
-                      style: const TextStyle(fontSize: 16),
+                      style: const TextStyle(fontSize: 48),
                     ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Score: $score',
+                          style: const TextStyle(fontSize: 16),
+                        ),
+                        
+                          Icon(Icons.emoji_events, color: Colors.amber, size: 24), // Star icon
+                      ],
+                    ),
+                    
                     Text(
                       'Total doodoos: $totalDoodoos',
                       style: const TextStyle(fontSize: 16),
@@ -229,7 +245,17 @@ class _ProfilePageState extends State<ProfilePage> {
                                   : '',
                               style: const TextStyle(fontSize: 12, color: Colors.grey),
                             ),
-                            trailing: IconButton(
+                            onTap: () {
+                              // Navigate to the doodoo details page
+                                final doodooId = doodoo['id'] as int;
+                              Navigator.pushNamed(
+                                context,
+                                '/doodoo_details',
+                                arguments: {'doodooId': doodooId},
+                              );
+                            },
+                            trailing: Supabase.instance.client.auth.currentUser?.id == doodoo['posted_by']
+                               ? IconButton(
                               icon: const Icon(Icons.delete, color: Colors.red),
                               tooltip: 'Delete doodoo',
                               onPressed: () async {
@@ -267,7 +293,10 @@ class _ProfilePageState extends State<ProfilePage> {
                                   }
                                 }
                               },
-                            ),
+
+                            )
+                            : null, // Show delete button only for own doodoos
+                            
                           )),
                   ],
                 ),

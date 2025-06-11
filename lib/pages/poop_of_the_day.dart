@@ -16,7 +16,8 @@ class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
   String? _imageUrl;
   int? _fileId;
   String? _fileName;
-  String? _postedBy;
+  String? _postedById;
+  String? _postedByName;
   int _ratingCount = 0; // Correctly track the number of ratings
   List<Map<String, dynamic>> _comments = [];
   bool _isLoadingComments = false;
@@ -25,10 +26,10 @@ class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
   @override
   void initState() {
     super.initState();
-    _loadHighestRatedImage();
+    _loadHighestRatedDoodoo();
   }
 
-  Future<void> _loadHighestRatedImage() async {
+  Future<void> _loadHighestRatedDoodoo() async {
     try {
       final imageUrl = await _supabaseService.fetchHighestRatedImage(since: DateTime.now().subtract(const Duration(days: 1)));
       if (imageUrl != null) {
@@ -38,12 +39,13 @@ class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
           (file) => file['file_url'] == imageUrl,
           orElse: () => {},
         );
-
+        final pbn = await _supabaseService.getUserProfile(_postedById);
         setState(() {
           _imageUrl = imageUrl;
           _fileId = file.isNotEmpty ? file['id'] : null;
           _fileName = file.isNotEmpty ? file['file_name'] : null;
-          _postedBy = file.isNotEmpty ? file['posted_by'] : null;
+          _postedById = file.isNotEmpty ? file['posted_by'] : null;
+          _postedByName = pbn?['user_name'] ?? 'Anonymous';
           _isLoadingImage = false;
         });
 
@@ -117,7 +119,7 @@ class _PoopOfTheDayPageState extends State<PoopOfTheDayPage> {
                         child: ImageViewer(
                           imageUrl: _imageUrl,
                           imageName: _fileName,
-                          postedBy: _postedBy,
+                          postedBy: _postedByName ?? 'Anonymous',
                           ratingCount: _ratingCount, // Pass the correct rating count
                           showNavigation: false, // Disable navigation arrows
                         ),

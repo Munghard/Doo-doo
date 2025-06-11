@@ -1,7 +1,8 @@
+import 'package:doodoo/pages/doodoo_page.dart';
 import 'package:doodoo/pages/profile_page.dart';
+import 'package:doodoo/pages/scroll_doodoos_page.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:doodoo/pages/home_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,12 +27,19 @@ class MyApp extends StatelessWidget {
         ),
         useMaterial3: true,
       ),
-      home: const MyHomePage(title: '💩Doo-doo'),
+      home: const ScrollDoodoosPage(),
       onGenerateRoute: (settings) {
         if (settings.name == '/profile') {
           final userId = settings.arguments as String?;
           return MaterialPageRoute(
             builder: (context) => ProfilePage(userId: userId),
+          );
+        }
+        if (settings.name == '/doodoo_details') {
+          final args = settings.arguments as Map<String, dynamic>;
+          final doodooId = args['doodooId'] as int;
+          return MaterialPageRoute(
+            builder: (context) => DoodooPage(doodooId: doodooId),
           );
         }
         return null;

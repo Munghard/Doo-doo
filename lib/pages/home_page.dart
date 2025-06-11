@@ -1,28 +1,26 @@
-import 'package:doodoo/pages/profile_page.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
-import 'package:doodoo/pages/login_page.dart';
-import 'package:doodoo/pages/register_page.dart';
 import 'package:doodoo/widgets/image_viewer.dart';
-import 'package:doodoo/pages/poop_of_the_day.dart';
 import 'package:doodoo/services/supabase_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:doodoo/widgets/rating_widget.dart';
 import 'package:doodoo/widgets/comment_section.dart';
+import 'package:doodoo/widgets/doodoo_navbar.dart';
 
 class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-  final String title;
+  const MyHomePage({super.key});
 
   @override
   State<MyHomePage> createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  final String title = '💩Doo-doo';
   final SupabaseService _supabaseService = SupabaseService();
   List<Map<String, dynamic>> _images = [];
   int _currentIndex = 0;
   bool _isLoading = false;
+  double _userRating = 0.0;
   int _rating = 0;
   String? postedBy;
   String? profilePictureUrl;
@@ -254,20 +252,7 @@ class _MyHomePageState extends State<MyHomePage> {
     }
   }
 
-  Future<String> _getUsername(String userId) async {
-    final response = await Supabase.instance.client
-        .from('profiles')
-        .select('user_name')
-        .eq('id', userId)
-        .single();
-
-    if (response.error != null || response.data == null) {
-      return 'Anon';
-    }
-
-    return (response.data['user_name'] as String?) ?? 'Anon';
-  }
-
+  
   String getShortEmail(String email, {int maxLength = 6}) {
     final username = email.contains('@') ? email.split('@')[0] : email;
     if (username.length <= maxLength) return username;
@@ -283,117 +268,20 @@ class _MyHomePageState extends State<MyHomePage> {
 
   @override
   Widget build(BuildContext context) {
-    final email = Supabase.instance.client.auth.currentUser?.email ?? 'Guest';
-    final shortEmail = getShortEmail(email);
-
     return Scaffold(
       appBar: AppBar(
+        // automaticallyImplyLeading: false,
         title: Text(
-          widget.title,
+          title,
           style: const TextStyle(
             fontFamily: 'Roboto',
             fontFamilyFallback: ['Noto Color Emoji'],
           ),
         ),
         actions: [
-          if (profilePictureUrl != null && profilePictureUrl!.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20), // adjust for rounding
-              child: Image.network(
-                profilePictureUrl!,
-                width: 24,
-                height: 24,
-                fit: BoxFit.cover,
-              ),
-            )
-          else
-            ClipRRect(
-              borderRadius: BorderRadius.circular(20), // adjust for rounding
-              child: Image.asset(
-                'assets/images/default-user.jpg',
-                width: 24,
-                height: 24,
-                fit: BoxFit.cover,
-              ),
-            ),
-          const SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              shortEmail,
-              overflow: TextOverflow.ellipsis,
-              maxLines: 2,
-            ),
+          DoodooNavBar(
+            onAddFile: _addFile,
           ),
-          IconButton(
-            icon: const Icon(Icons.add_circle_outline),
-            tooltip: 'Take a doo-doo',
-            onPressed: () {
-              _addFile();
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.star),
-            tooltip: 'Doodoo of the Day',
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const PoopOfTheDayPage(),
-                ),
-              );
-            },
-          ),
-          if (Supabase.instance.client.auth.currentUser != null)
-            IconButton(
-              icon: const Icon(Icons.person_2),
-              tooltip: 'Profile',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => ProfilePage(userId:Supabase.instance.client.auth.currentUser!.id)),
-                );
-              },
-            ),
-          if (Supabase.instance.client.auth.currentUser == null)
-            IconButton(
-              icon: const Icon(Icons.app_registration_outlined),
-              tooltip: 'Register',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const RegisterPage(title: 'Register'),
-                  ),
-                );
-              },
-            ),
-          if (Supabase.instance.client.auth.currentUser == null)
-            IconButton(
-              icon: const Icon(Icons.login_outlined),
-              tooltip: 'Login',
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const LoginPage(title: 'Login'),
-                  ),
-                );
-              },
-            ),
-          if (Supabase.instance.client.auth.currentUser != null)
-            IconButton(
-              icon: const Icon(Icons.logout_outlined),
-              tooltip: 'Logout',
-              onPressed: () async {
-                await Supabase.instance.client.auth.signOut();
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const LoginPage(title: 'Login'),
-                  ),
-                );
-              },
-            ),
         ],
       ),
       body: RefreshIndicator(
@@ -432,6 +320,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16.0),
                           child: RatingWidget(
+                            userRating: _userRating,
                             rating: _rating.toDouble(),
                             ratingCount: _ratingCount, // Pass the rating count
                             onRatingUpdate: (rating) {

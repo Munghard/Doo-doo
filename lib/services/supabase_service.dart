@@ -1,4 +1,6 @@
 import 'dart:typed_data';
+import 'package:doodoo/models/doodoo.dart';
+import 'package:doodoo/notifications/notification_factory.dart';
 import 'package:image/image.dart' as img;
 import 'package:file_picker/src/platform_file.dart';
 import 'package:flutter/material.dart';
@@ -7,16 +9,53 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 final supabase = Supabase.instance.client;
 
 class SupabaseService {
+
   Future<List<Map<String, dynamic>>> fetchFiles() async {
     final response = await supabase
         .from('files')
-        .select('id, file_url, file_name, posted_by')
+        .select('id, file_url, file_name, posted_by, created_at')
         .ilike('file_url', '%ipoop-files%')  
         .order('created_at', ascending: false);
         // .limit(10);
     return List<Map<String, dynamic>>.from(response);
   }
+  
+  Future<List<DoodooEntry>> fetchFullDoodoos() async {
+    final files = await fetchFiles();
 
+    return Future.wait(files.map((file) async {
+      final user = await getUserProfile(file['posted_by']);
+      final comments = await getComments(file['id']);
+      final avgRating = await fetchAverageRating(file['id']);
+      final ratingsResponse = await supabase
+          .from('ratings')
+          .select('id,file_id')
+          .eq('file_id', file['id']);
+
+      final numRatings = ratingsResponse.length;
+      double userRating = 0.0;
+      if (Supabase.instance.client.auth.currentUser != null) {
+        userRating = await getDoodooRatingByUser(
+          file['id'],
+          Supabase.instance.client.auth.currentUser!.id,
+        );
+      }
+
+      return DoodooEntry(
+        id: file['id'] as int,
+        fileName: file['file_name'],
+        fileUrl: file['file_url'],
+        rating: avgRating,
+        userRating: userRating,
+        userProfile: user ?? {'user_name': 'Anon', 'profile_picture': ''},
+        createdAt: DateTime.parse(file['created_at']),
+        comments: comments.map((c) => c['text'].toString()).toList(),
+        numComments: comments.length,
+        numRatings: numRatings,
+      );
+    }));
+  }
+  
   Future<double> fetchAverageRating(int fileId) async {
     final response = await supabase
         .from('ratings')
@@ -29,22 +68,57 @@ class SupabaseService {
         : 0.0;
   }
 
-  Future<void> addRating(int fileId, double rating,String userid) async {
+  Future<void> addRating(int fileId, double rating,String senderId) async {
     await supabase.from('ratings').insert({
       'file_id': fileId,
       'rating': rating,
-      'rated_by': userid,
+      'rated_by': senderId,
       'created_at': DateTime.now().toIso8601String(),
     });
+
+    final userId = await getFileCreator(fileId);
+    
+    final notification = NotificationFactory.create(
+      fileId: fileId,
+      userId: userId,
+      senderId: senderId,
+      type: 'Rating',
+      data: 'Rating: $rating');
+
+    await sendNotification(notification);
+  }
+  Future<String> getFileCreator(int fileId) async {
+    final response = await supabase
+        .from('files')
+        .select('posted_by')
+        .eq('id', fileId)
+        .single();
+
+    return response['posted_by'] as String;
   }
 
+
   Future<void> addComment(int fileId, String content) async {
+    final senderId = supabase.auth.currentUser?.id ?? 'anonymous';
+    
     await supabase.from('comments').insert({
-      'created_by': supabase.auth.currentUser?.id ?? 'anonymous',
+      'created_by': senderId,
       'content': content,
       'file_id': fileId,
       'created_at': DateTime.now().toUtc().toIso8601String(),
     });
+    
+    final userId = await getFileCreator(fileId);
+    
+    final notification = NotificationFactory.create(
+      fileId: fileId,
+      userId: userId,
+      senderId: senderId,
+      type: 'Comment',
+      data: content);
+
+    await sendNotification(notification);
+
   }
   // add edited_at field to track when a comment was edited later
   Future<void> editComment(int commentId, String content) async {
@@ -58,6 +132,20 @@ class SupabaseService {
     .eq('id', commentId)
     .eq('created_by', userId);
   }
+
+  Future<void> sendNotification(Map<String, dynamic> notification) async {
+
+  await supabase.from('notifications').insert({
+    'user_id': notification['user_id'],
+    'sender_id': notification['sender_id'],
+    'file_id': notification['file_id'],
+    'data': notification['data'],
+    'type': notification['type'],
+    'read': false,
+    'created_at': DateTime.now().toIso8601String(),
+  });
+}
+
 
   Future<String> uploadFile(String fileName, Uint8List bytes) async {
     final uniqueFileName = '${DateTime.now().millisecondsSinceEpoch}_$fileName';
@@ -205,7 +293,7 @@ class SupabaseService {
     try {
       final response = await supabase
           .from('profiles')
-          .select('user_name, profile_picture')
+          .select('user_name, profile_picture, score')
           .eq('id', userId)
           .single();
 
@@ -293,34 +381,47 @@ class SupabaseService {
         .then((response) => response.length);
   }
 
-Future<bool> deleteDoodoo(int fileId) async {
-  try {
-    final response = await supabase
-        .from('files')
-        .select('file_url, bucket')
-        .eq('id', fileId)
-        .maybeSingle();
+  Future<bool> deleteDoodoo(int fileId) async {
+    try {
+      final response = await supabase
+          .from('files')
+          .select('file_url, bucket')
+          .eq('id', fileId)
+          .maybeSingle();
 
-    if (response == null) {
-      debugPrint('File not found in database.');
+      if (response == null) {
+        debugPrint('File not found in database.');
+        return false;
+      }
+
+      final String bucket = response['bucket'];
+      final String fileUrl = response['file_url'];
+      final filePath = Uri.decodeFull(fileUrl.split('/').last);
+
+      await supabase.storage.from(bucket).remove([filePath]);
+      await supabase.from('files').delete().eq('id', fileId);
+
+      debugPrint('Doodoo deleted successfully.');
+      return true;
+    } catch (e) {
+      debugPrint('Error deleting doodoo: $e');
       return false;
     }
-
-    final String bucket = response['bucket'];
-    final String fileUrl = response['file_url'];
-    final filePath = Uri.decodeFull(fileUrl.split('/').last);
-
-    await supabase.storage.from(bucket).remove([filePath]);
-    await supabase.from('files').delete().eq('id', fileId);
-
-    debugPrint('Doodoo deleted successfully.');
-    return true;
-  } catch (e) {
-    debugPrint('Error deleting doodoo: $e');
-    return false;
   }
-}
+  Future<int> getTotalNotificationsByUser(String userId) async {
+    try {
+      final response = await supabase
+          .from('notifications')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('read', false); // Count only unread notifications
 
+      return response.length;
+    } catch (e) {
+      debugPrint('Error fetching total notifications: $e');
+      return 0;
+    }
+  }
 
   Future<Uint8List> resizeImageBytes(Uint8List originalBytes, int maxWidth, int maxHeight) async {
   final image = img.decodeImage(originalBytes);
@@ -341,6 +442,110 @@ Future<bool> deleteDoodoo(int fileId) async {
   final resizedBytes = img.encodeJpg(resized, quality: 85);
 
   return Uint8List.fromList(resizedBytes);
+}
+
+  Future<DoodooEntry?> fetchDoodooById(int doodooId) async {
+    final files = await supabase
+        .from('files')
+        .select('id, file_url, file_name, posted_by, created_at')
+        .eq('id', doodooId)
+        .maybeSingle();
+
+    if (files == null) return null;
+
+    final user = await getUserProfile(files['posted_by']);
+    final comments = await getComments(files['id']);
+    final avgRating = await fetchAverageRating(files['id']);
+    final ratingsResponse = await supabase
+        .from('ratings')
+        .select('id')
+        .eq('file_id', files['id']);
+    final numRatings = ratingsResponse.length;
+    double userRating = 0.0;
+    if (Supabase.instance.client.auth.currentUser != null) {
+      userRating = await getDoodooRatingByUser(
+        files['id'],
+        Supabase.instance.client.auth.currentUser!.id,
+      );
+    }
+
+    return DoodooEntry(
+      id: files['id'] as int,
+      fileName: files['file_name'],
+      fileUrl: files['file_url'],
+      userRating: userRating,
+      rating: avgRating,
+      userProfile: user ?? {'user_name': 'Anon', 'profile_picture': ''},
+      createdAt: DateTime.parse(files['created_at']),
+      comments: comments.map((c) => c['text'].toString()).toList(),
+      numComments: comments.length,
+      numRatings: numRatings,
+    );
+  }
+
+  Future<double> getDoodooRatingByUser(int fileId, String userId) async {
+    try {
+      final response = await supabase
+          .from('ratings')
+          .select('rating')
+          .eq('file_id', fileId)
+          .eq('rated_by', userId)
+          .limit(1);
+
+      if (response == null || response.isEmpty) return 0;
+
+      return (response.first['rating'] as num).toDouble();
+    } catch (e) {
+      debugPrint('Error fetching user rating: $e');
+      return 0;
+    }
+  }
+
+  Future<List<dynamic>> getDoodooRatingsByUser(int doodooId, String userId) async {
+    final response = await Supabase.instance.client
+        .from('ratings')
+        .select()
+        .eq('doodoo_id', doodooId)
+        .eq('user_id', userId);
+    return response as List<dynamic>;
+  }
+
+  Future<void> markAllNotificationsRead(String userId) async {
+  try {
+    if (userId.isEmpty) {
+      throw Exception('Invalid user ID provided');
+    }
+
+    final response = await supabase
+        .from('notifications')
+        .update({'read': true})
+        .eq('user_id', userId)
+        .select(); // Fetch updated rows to verify
+
+    if (response.isEmpty) {
+      // Optional: Decide if this is an error or just means no notifications exist
+      debugPrint('No notifications found for user $userId');
+    }
+  } catch (e) {
+    throw Exception('Failed to mark all notifications as read: $e');
+  }
+}
+
+Future<void> markNotificationRead(String userId, int nId) async {
+  try {
+    final response = await supabase
+        .from('notifications')
+        .update({'read': true})
+        .eq('id', nId)
+        .eq('user_id', userId)
+        .select(); // Fetch updated row to confirm
+
+    if (response.isEmpty) {
+      throw Exception('No notification found with id $nId for user $userId');
+    }
+  } catch (e) {
+    throw Exception('Failed to mark notification as read: $e');
+  }
 }
 
 }

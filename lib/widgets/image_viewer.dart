@@ -20,6 +20,21 @@ class ImageViewer extends StatelessWidget {
     this.ratingCount, // Optional property
   });
 
+  Widget _buildImage(BuildContext context) {
+    if (imageUrl == null || imageUrl!.isEmpty) {
+      return const Center(child: Text('No images available'));
+    }
+    return Image.network(
+      imageUrl!,
+      fit: BoxFit.contain,
+      loadingBuilder: (context, child, loadingProgress) {
+        if (loadingProgress == null) return child;
+        return const Center(child: CircularProgressIndicator());
+      },
+      errorBuilder: (context, error, stackTrace) =>
+          const Center(child: Icon(Icons.broken_image, size: 48)),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,15 +50,20 @@ class ImageViewer extends StatelessWidget {
             const SizedBox(height: 16),
             Flexible(
               child: GestureDetector(
+                onHorizontalDragEnd: (details) {
+                  if (details.primaryVelocity! < -500) {
+                    onPrev!();
+                  } else if (details.primaryVelocity! > 500) {
+                    onNext!();
+                  }
+                },
                 onTap: () {
                   showDialog(
                     context: context,
                     builder: (_) => Dialog(
                       insetPadding: const EdgeInsets.all(10),
                       child: InteractiveViewer(
-                        child: imageUrl != null && imageUrl!.isNotEmpty
-                            ? Image.network(imageUrl!, fit: BoxFit.contain)
-                            : const Center(child: Text('No images available')),
+                        child: _buildImage(context),
                       ),
                     ),
                   );
@@ -52,9 +72,7 @@ class ImageViewer extends StatelessWidget {
                   child: Container(
                     decoration: BoxDecoration(border: Border.all(color: Colors.brown, width: 4)),
                     clipBehavior: Clip.hardEdge,
-                    child: imageUrl != null && imageUrl!.isNotEmpty
-                        ? Image.network(imageUrl!, fit: BoxFit.contain)
-                        : const Center(child: Text('No images available')),
+                    child: _buildImage(context),
                   ),
                 ),
               ),
